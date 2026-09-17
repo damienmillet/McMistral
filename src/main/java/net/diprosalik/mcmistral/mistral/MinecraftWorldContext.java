@@ -6,6 +6,9 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.server.permissions.PermissionLevel;
+import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
@@ -48,7 +51,7 @@ public class MinecraftWorldContext {
         if (source.getEntity() instanceof ServerPlayer player) {
             Vec3 pos = player.position();
             BlockPos blockPos = player.blockPosition();
-            ChunkPos chunkPos = new ChunkPos(blockPos);
+            ChunkPos chunkPos = ChunkPos.containing(blockPos);
             int skyLight = world.getBrightness(LightLayer.SKY, blockPos);
             int blockLight = world.getBrightness(LightLayer.BLOCK, blockPos);
             int totalLight = world.getRawBrightness(blockPos, 0);
@@ -57,14 +60,14 @@ public class MinecraftWorldContext {
             context.append("\n=== F3 DEBUG NAVIGATION & LOCATION ===\n");
             context.append(String.format("- XYZ Coordinates: X: %.3f, Y: %.5f, Z: %.3f\n", pos.x, pos.y, pos.z));
             context.append(String.format("- Block Pos: [%d, %d, %d]\n", blockPos.getX(), blockPos.getY(), blockPos.getZ()));
-            context.append(String.format("- Chunk Pos: [%d, %d] (In Chunk Local: X: %d, Y: %d, Z: %d)\n", chunkPos.x, chunkPos.z, blockPos.getX() & 15, blockPos.getY() & 15, blockPos.getZ() & 15));
+            context.append(String.format("- Chunk Pos: [%d, %d] (In Chunk Local: X: %d, Y: %d, Z: %d)\n", chunkPos.x(), chunkPos.z(), blockPos.getX() & 15, blockPos.getY() & 15, blockPos.getZ() & 15));
             context.append("- Facing Direction: ").append(player.getDirection().name().toUpperCase()).append(" (Yaw: ").append(String.format("%.1f", player.getYRot())).append(" / Pitch: ").append(String.format("%.1f", player.getXRot())).append(")\n");
             context.append(String.format("- F3 Light Level: %d (Sky: %d, Block: %d)\n", totalLight, skyLight, blockLight));
             context.append("- Is in Cave/Underground: ").append(isInCave).append("\n");
             context.append("- Sea Level Reference: ").append(seaLevel).append("\n");
             context.append("\n=== PLAYER STATUS ===\n");
             context.append("- Name: ").append(player.getName().getString()).append("\n");
-            context.append("- Has permission Level 2: ").append(source.hasPermission(2)).append("\n");
+            context.append("- Has permission Level 2: ").append(hasPermissionLevel(source, PermissionLevel.GAMEMASTERS)).append("\n");
             context.append("- Gamemode: ").append(player.gameMode().name()).append("\n");
             context.append("- Is on Ground: ").append(player.onGround()).append("\n");
             context.append("- Is Swimming: ").append(player.isSwimming()).append("\n");
@@ -187,5 +190,13 @@ public class MinecraftWorldContext {
             String targetedBlock = BuiltInRegistries.BLOCK.getKey(world.getBlockState(targetedPos).getBlock()).toString();
             context.append("- Looking at Block: ").append(targetedBlock).append("\n");
         }
+    }
+
+    private static boolean hasPermissionLevel(CommandSourceStack source, PermissionLevel required) {
+        PermissionSet permissions = source.permissions();
+        if (permissions instanceof LevelBasedPermissionSet levelBased) {
+            return levelBased.level().isEqualOrHigherThan(required);
+        }
+        return permissions == PermissionSet.ALL_PERMISSIONS;
     }
 }
