@@ -1,12 +1,12 @@
 package net.diprosalik.mcmistral.mistral;
 
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 
 public class CommandHandlerService {
 
-    public static String processResponseCommands(String responseText, ServerCommandSource source) {
+    public static String processResponseCommands(String responseText, CommandSourceStack source) {
         if (!responseText.contains("[COMMAND:")) {
             return responseText;
         }
@@ -24,18 +24,18 @@ public class CommandHandlerService {
         boolean isProtectedCommand = command.startsWith("teleport") || command.startsWith("tp")
                 || command.startsWith("gamemode") || command.startsWith("give");
 
-        if (isProtectedCommand && !source.hasPermissionLevel(2)) {
-            source.sendError(Text.literal("Mistral tried to execute an admin command, but you lack Permission Level 2 (OP)!"));
+        if (isProtectedCommand && !source.hasPermission(2)) {
+            source.sendFailure(Component.literal("Mistral tried to execute an admin command, but you lack Permission Level 2 (OP)!"));
             return cleanText;
         }
 
         source.getServer().execute(() -> {
             try {
-                ServerCommandSource adminPlayerSource = source.withLevel(4).withSilent();
-                source.getServer().getCommandManager().parseAndExecute(adminPlayerSource, command);
-                source.sendFeedback(() -> Text.literal("[Mistral executed: /" + command + "]").formatted(Formatting.GREEN), false);
+                CommandSourceStack adminPlayerSource = source.withPermission(4).withSuppressedOutput();
+                source.getServer().getCommands().performPrefixedCommand(adminPlayerSource, command);
+                source.sendSuccess(() -> Component.literal("[Mistral executed: /" + command + "]").withStyle(ChatFormatting.GREEN), false);
             } catch (Exception e) {
-                source.sendError(Text.literal("Failed to execute command: " + e.getMessage()));
+                source.sendFailure(Component.literal("Failed to execute command: " + e.getMessage()));
             }
         });
 

@@ -1,7 +1,7 @@
 package net.diprosalik.mcmistral.mistral;
 
 import me.shedaniel.autoconfig.AutoConfig;
-import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.commands.CommandSourceStack;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,7 +17,7 @@ public class MistralClient {
         return config.apiKey != null && !config.apiKey.trim().isEmpty();
     }
 
-    public static CompletableFuture<String> queryMistral(String prompt, ServerCommandSource source) {
+    public static CompletableFuture<String> queryMistral(String prompt, CommandSourceStack source) {
         return CompletableFuture.supplyAsync(() -> {
             MistralConfig config = AutoConfig.getConfigHolder(MistralConfig.class).getConfig();
 

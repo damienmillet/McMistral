@@ -1,17 +1,22 @@
 package net.diprosalik.mcmistral.mistral;
 
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.LightType;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,85 +24,72 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class MinecraftWorldContext {
-
-    public static String buildContext(ServerCommandSource source) {
+    public static String buildContext(CommandSourceStack source) {
         StringBuilder context = new StringBuilder();
         var server = source.getServer();
-        var world = source.getWorld();
-
-        long dailyTime = world.getTimeOfDay() % 24000;
+        var world = source.getLevel();
+        long clockTime = world.getOverworldClockTime();
+        long dailyTime = clockTime % 24000;
         if (dailyTime < 0) dailyTime += 24000;
-        long daysPlayed = world.getTimeOfDay() / 24000;
-
+        long daysPlayed = clockTime / 24000;
         String worldPhase = evaluateWorldPhase(dailyTime);
-        double mspt = server.getAverageTickTime();
+        double mspt = server.getAverageTickTimeNanos() / 1_000_000.0;
         double tps = Math.min(20.0, 1000.0 / mspt);
-
         context.append("=== MINECRAFT WORLD CONTEXT (DEBUG/F3 ACTIVE) ===\n");
-        context.append("- Game Version: ").append(server.getVersion()).append("\n");
+        context.append("- Game Version: ").append(server.getServerVersion()).append("\n");
         context.append("- Server Performance: ").append(String.format("%.1f", tps)).append(" TPS / ").append(String.format("%.1f", mspt)).append(" MSPT\n");
-        context.append("- Dimension: ").append(world.getRegistryKey().getValue().toString()).append("\n");
+        context.append("- Dimension: ").append(world.dimension().identifier().toString()).append("\n");
         context.append("- Days Passed in World: ").append(daysPlayed).append("\n");
         context.append("- Time Ticks: ").append(dailyTime).append(" / 24000\n");
         context.append("- World Phase: ").append(worldPhase).append("\n");
         context.append("- Weather: ").append(world.isThundering() ? "Thunderstorm" : (world.isRaining() ? "Raining/Snowing" : "Clear/Sunny")).append("\n");
-        context.append("- Difficulty: ").append(world.getDifficulty().getName()).append("\n");
-        context.append(" -Seed: ").append(world.getSeed()).append("\n");
-
-        if (source.getEntity() instanceof ServerPlayerEntity player) {
-            Vec3d pos = player.getEntityPos();
-            BlockPos blockPos = player.getBlockPos();
+        context.append("- Difficulty: ").append(world.getDifficulty().getSerializedName()).append("\n");
+        context.append(" -Seed: ").append(((ServerLevel) world).getSeed()).append("\n");
+        if (source.getEntity() instanceof ServerPlayer player) {
+            Vec3 pos = player.position();
+            BlockPos blockPos = player.blockPosition();
             ChunkPos chunkPos = new ChunkPos(blockPos);
-
-            int skyLight = world.getLightLevel(LightType.SKY, blockPos);
-            int blockLight = world.getLightLevel(LightType.BLOCK, blockPos);
-            int totalLight = world.getLightLevel(blockPos);
+            int skyLight = world.getBrightness(LightLayer.SKY, blockPos);
+            int blockLight = world.getBrightness(LightLayer.BLOCK, blockPos);
+            int totalLight = world.getRawBrightness(blockPos, 0);
             int seaLevel = world.getSeaLevel();
-            boolean isInCave = skyLight == 0 && blockPos.getY() < seaLevel && !world.getDimensionEntry().value().hasCeiling();
-
+            boolean isInCave = skyLight == 0 && blockPos.getY() < seaLevel && !world.dimensionType().hasCeiling();
             context.append("\n=== F3 DEBUG NAVIGATION & LOCATION ===\n");
             context.append(String.format("- XYZ Coordinates: X: %.3f, Y: %.5f, Z: %.3f\n", pos.x, pos.y, pos.z));
             context.append(String.format("- Block Pos: [%d, %d, %d]\n", blockPos.getX(), blockPos.getY(), blockPos.getZ()));
             context.append(String.format("- Chunk Pos: [%d, %d] (In Chunk Local: X: %d, Y: %d, Z: %d)\n", chunkPos.x, chunkPos.z, blockPos.getX() & 15, blockPos.getY() & 15, blockPos.getZ() & 15));
-            context.append("- Facing Direction: ").append(player.getHorizontalFacing().name().toUpperCase()).append(" (Yaw: ").append(String.format("%.1f", player.getYaw())).append(" / Pitch: ").append(String.format("%.1f", player.getPitch())).append(")\n");
+            context.append("- Facing Direction: ").append(player.getDirection().name().toUpperCase()).append(" (Yaw: ").append(String.format("%.1f", player.getYRot())).append(" / Pitch: ").append(String.format("%.1f", player.getXRot())).append(")\n");
             context.append(String.format("- F3 Light Level: %d (Sky: %d, Block: %d)\n", totalLight, skyLight, blockLight));
             context.append("- Is in Cave/Underground: ").append(isInCave).append("\n");
             context.append("- Sea Level Reference: ").append(seaLevel).append("\n");
-
             context.append("\n=== PLAYER STATUS ===\n");
             context.append("- Name: ").append(player.getName().getString()).append("\n");
-            context.append("- Has permission Level 2: ").append(source.hasPermissionLevel(2)).append("\n");
-            context.append("- Gamemode: ").append(player.interactionManager.getGameMode().name()).append("\n");
-            context.append("- Is on Ground: ").append(player.isOnGround()).append("\n");
+            context.append("- Has permission Level 2: ").append(source.hasPermission(2)).append("\n");
+            context.append("- Gamemode: ").append(player.gameMode().name()).append("\n");
+            context.append("- Is on Ground: ").append(player.onGround()).append("\n");
             context.append("- Is Swimming: ").append(player.isSwimming()).append("\n");
-            context.append("- Is Sneaking: ").append(player.isSneaking()).append("\n");
+            context.append("- Is Sneaking: ").append(player.isCrouching()).append("\n");
             context.append("- Health: ").append(String.format("%.1f", player.getHealth())).append("/").append(player.getMaxHealth()).append("\n");
-            context.append("- Food Level: ").append(player.getHungerManager().getFoodLevel()).append("/20 (Saturation: ").append(String.format("%.1f", player.getHungerManager().getSaturationLevel())).append(")\n");
+            context.append("- Food Level: ").append(player.getFoodData().getFoodLevel()).append("/20 (Saturation: ").append(String.format("%.1f", player.getFoodData().getSaturationLevel())).append(")\n");
             context.append("- Experience: Level ").append(player.experienceLevel).append(" (Progress: ").append(String.format("%.1f", player.experienceProgress * 100)).append("%)\n");
-
-            var biomeKey = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME).getId(world.getBiome(blockPos).value());
-            context.append("- Current Biome: ").append(biomeKey != null ? biomeKey.toString() : "Unknown").append("\n");
-
+            String biomeName = world.getBiome(blockPos).unwrapKey().map(k -> k.identifier().toString()).orElse("Unknown");
+            context.append("- Current Biome: ").append(biomeName).append("\n");
             appendStatusEffects(context, player);
-
-            context.append("- Main Hand: ").append(Registries.ITEM.getId(player.getMainHandStack().getItem()).toString()).append(" (Count: ").append(player.getMainHandStack().getCount()).append(")\n");
-            context.append("- Off Hand: ").append(Registries.ITEM.getId(player.getOffHandStack().getItem()).toString()).append("\n");
-            context.append("- Armor: [Helmet: ").append(Registries.ITEM.getId(player.getEquippedStack(EquipmentSlot.HEAD).getItem()).toString()).append(", Chestplate: ").append(Registries.ITEM.getId(player.getEquippedStack(EquipmentSlot.BODY).getItem()).toString()).append(", Leggings: ").append(Registries.ITEM.getId(player.getEquippedStack(EquipmentSlot.LEGS).getItem()).toString()).append(", Boots: ").append(Registries.ITEM.getId(player.getEquippedStack(EquipmentSlot.FEET).getItem()).toString()).append("]\n");
-
+            context.append("- Main Hand: ").append(BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString()).append(" (Count: ").append(player.getMainHandItem().getCount()).append(")\n");
+            context.append("- Off Hand: ").append(BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString()).append("\n");
+            context.append("- Armor: [Helmet: ").append(BuiltInRegistries.ITEM.getKey(player.getItemBySlot(EquipmentSlot.HEAD).getItem()).toString()).append(", Chestplate: ").append(BuiltInRegistries.ITEM.getKey(player.getItemBySlot(EquipmentSlot.CHEST).getItem()).toString()).append(", Leggings: ").append(BuiltInRegistries.ITEM.getKey(player.getItemBySlot(EquipmentSlot.LEGS).getItem()).toString()).append(", Boots: ").append(BuiltInRegistries.ITEM.getKey(player.getItemBySlot(EquipmentSlot.FEET).getItem()).toString()).append("]\n");
             appendInventory(context, player);
             appendModRecipes(context);
             appendInstalledMods(context);
             appendTargetedBlock(context, player, world);
-
             context.append("\n=== IMMEDIATE ENVIRONMENT ===\n");
-            context.append("- Block at Feet: ").append(Registries.BLOCK.getId(world.getBlockState(blockPos).getBlock()).toString()).append("\n");
-            context.append("- Block below Feet: ").append(Registries.BLOCK.getId(world.getBlockState(blockPos.down()).getBlock()).toString()).append("\n");
-            context.append("- Block above Head: ").append(Registries.BLOCK.getId(world.getBlockState(blockPos.up(2)).getBlock()).toString()).append("\n");
-            context.append("- Can see Sky: ").append(world.isSkyVisible(blockPos)).append("\n");
+            context.append("- Block at Feet: ").append(BuiltInRegistries.BLOCK.getKey(world.getBlockState(blockPos).getBlock()).toString()).append("\n");
+            context.append("- Block below Feet: ").append(BuiltInRegistries.BLOCK.getKey(world.getBlockState(blockPos.below()).getBlock()).toString()).append("\n");
+            context.append("- Block above Head: ").append(BuiltInRegistries.BLOCK.getKey(world.getBlockState(blockPos.above(2)).getBlock()).toString()).append("\n");
+            context.append("- Can see Sky: ").append(world.canSeeSky(blockPos)).append("\n");
         } else {
             context.append("\n- Executed by Console or Non-Player Entity.\n");
         }
-
         context.append("===============================\n");
         return context.toString();
     }
@@ -110,34 +102,35 @@ public class MinecraftWorldContext {
         return "SUNRISE (Dawn, monsters start burning)";
     }
 
-    private static void appendStatusEffects(StringBuilder context, ServerPlayerEntity player) {
-        if (!player.getStatusEffects().isEmpty()) {
-            String effects = player.getStatusEffects().stream()
+    private static void appendStatusEffects(StringBuilder context, ServerPlayer player) {
+        List<MobEffectInstance> effects = player.getActiveEffects().stream().toList();
+        if (!effects.isEmpty()) {
+            String effectString = effects.stream()
                     .map(effect -> {
-                        Identifier effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType().value());
+                        Identifier effectId = BuiltInRegistries.MOB_EFFECT.getKey(effect.getEffect().value());
                         String name = (effectId != null) ? effectId.toString() : "unknown";
                         return name + " (Amp: " + effect.getAmplifier() + ", Duration: " + (effect.getDuration() / 20) + "s)";
                     })
                     .collect(Collectors.joining(", "));
-            context.append("- Active Status Effects: ").append(effects).append("\n");
+            context.append("- Active Status Effects: ").append(effectString).append("\n");
         } else {
             context.append("- Active Status Effects: None\n");
         }
     }
 
-    private static void appendInventory(StringBuilder context, ServerPlayerEntity player) {
+    private static void appendInventory(StringBuilder context, ServerPlayer player) {
         context.append("\n=== FULL PLAYER INVENTORY ===\n");
         var inventory = player.getInventory();
         boolean hasItems = false;
-        for (int i = 0; i < inventory.size(); i++) {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
             if (i >= 36) continue;
-            ItemStack stack = inventory.getStack(i);
+            ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty()) {
                 hasItems = true;
-                Identifier itemId = Registries.ITEM.getId(stack.getItem());
+                Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
                 context.append("- Slot ").append(i).append(": ").append(itemId.toString()).append(" (Count: ").append(stack.getCount()).append(")");
-                if (stack.isDamageable()) {
-                    context.append(" [Durability: ").append(stack.getMaxDamage() - stack.getDamage()).append("/").append(stack.getMaxDamage()).append("]");
+                if (stack.isDamageableItem()) {
+                    context.append(" [Durability: ").append(stack.getMaxDamage() - stack.getDamageValue()).append("/").append(stack.getMaxDamage()).append("]");
                 }
                 context.append("\n");
             }
@@ -149,7 +142,6 @@ public class MinecraftWorldContext {
         context.append("\n=== CRAFTING KNOWLEDGE ===\n");
         context.append("- Available Mod Recipes: ");
         List<String> modRecipes = ModRecipeStorage.ALL_MOD_RECIPES;
-
         if (modRecipes.isEmpty()) {
             context.append("None detected.\n");
         } else {
@@ -165,14 +157,13 @@ public class MinecraftWorldContext {
     private static void appendInstalledMods(StringBuilder context) {
         context.append("\n=== INSTALLED MODS & ITEMS ===\n");
         Map<String, List<String>> itemsByMod = new HashMap<>();
-        for (Item item : Registries.ITEM) {
-            Identifier id = Registries.ITEM.getId(item);
+        for (Item item : BuiltInRegistries.ITEM) {
+            Identifier id = BuiltInRegistries.ITEM.getKey(item);
             String namespace = id.getNamespace();
             if (!namespace.equals("minecraft") && !namespace.equals("brigadier")) {
                 itemsByMod.computeIfAbsent(namespace, k -> new ArrayList<>()).add(id.getPath());
             }
         }
-
         if (itemsByMod.isEmpty()) {
             context.append("- No external custom item mods detected.\n");
         } else {
@@ -189,11 +180,11 @@ public class MinecraftWorldContext {
         }
     }
 
-    private static void appendTargetedBlock(StringBuilder context, ServerPlayerEntity player, net.minecraft.world.World world) {
-        net.minecraft.util.hit.BlockHitResult hit = (net.minecraft.util.hit.BlockHitResult) player.raycast(5.0, 0.0f, false);
-        if (hit.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK) {
-            BlockPos targetedPos = hit.getBlockPos();
-            String targetedBlock = Registries.BLOCK.getId(world.getBlockState(targetedPos).getBlock()).toString();
+    private static void appendTargetedBlock(StringBuilder context, ServerPlayer player, Level world) {
+        HitResult hit = player.pick(5.0, 0.0f, false);
+        if (hit.getType() == HitResult.Type.BLOCK && hit instanceof BlockHitResult blockHit) {
+            BlockPos targetedPos = blockHit.getBlockPos();
+            String targetedBlock = BuiltInRegistries.BLOCK.getKey(world.getBlockState(targetedPos).getBlock()).toString();
             context.append("- Looking at Block: ").append(targetedBlock).append("\n");
         }
     }

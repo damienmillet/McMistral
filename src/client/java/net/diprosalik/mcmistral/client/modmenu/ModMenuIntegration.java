@@ -1,4 +1,4 @@
-package net.diprosalik.mcmistral.modmenu;
+package net.diprosalik.mcmistral.client.modmenu;
 
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;

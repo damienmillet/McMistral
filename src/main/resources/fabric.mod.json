@@ -21,19 +21,19 @@
 			"net.diprosalik.mcmistral.McMistralDataGenerator"
 		],
 		"client": [
-			"net.diprosalik.mcmistral.McMistralClient"
+			"net.diprosalik.mcmistral.client.McMistralClient"
 		],
 		"modmenu": [
-			"net.diprosalik.mcmistral.modmenu.ModMenuIntegration"
+			"net.diprosalik.mcmistral.client.modmenu.ModMenuIntegration"
 		]
 	},
 	"mixins": [
 		"mcmistral.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.19.3",
-		"minecraft": "~1.21.10",
-		"java": ">=21",
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
 		"fabric-api": "*"
 	}
 }
