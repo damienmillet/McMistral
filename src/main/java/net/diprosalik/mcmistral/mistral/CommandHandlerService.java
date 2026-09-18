@@ -3,6 +3,9 @@ package net.diprosalik.mcmistral.mistral;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.server.permissions.PermissionLevel;
+import net.minecraft.server.permissions.PermissionSet;
 
 public class CommandHandlerService {
 
@@ -24,14 +27,14 @@ public class CommandHandlerService {
         boolean isProtectedCommand = command.startsWith("teleport") || command.startsWith("tp")
                 || command.startsWith("gamemode") || command.startsWith("give");
 
-        if (isProtectedCommand && !source.hasPermission(2)) {
+        if (isProtectedCommand && !hasPermissionLevel(source, PermissionLevel.GAMEMASTERS)) {
             source.sendFailure(Component.literal("Mistral tried to execute an admin command, but you lack Permission Level 2 (OP)!"));
             return cleanText;
         }
 
         source.getServer().execute(() -> {
             try {
-                CommandSourceStack adminPlayerSource = source.withPermission(4).withSuppressedOutput();
+                CommandSourceStack adminPlayerSource = source.withPermission(LevelBasedPermissionSet.OWNER).withSuppressedOutput();
                 source.getServer().getCommands().performPrefixedCommand(adminPlayerSource, command);
                 source.sendSuccess(() -> Component.literal("[Mistral executed: /" + command + "]").withStyle(ChatFormatting.GREEN), false);
             } catch (Exception e) {
@@ -40,5 +43,13 @@ public class CommandHandlerService {
         });
 
         return cleanText;
+    }
+
+    private static boolean hasPermissionLevel(CommandSourceStack source, PermissionLevel required) {
+        PermissionSet permissions = source.permissions();
+        if (permissions instanceof LevelBasedPermissionSet levelBased) {
+            return levelBased.level().isEqualOrHigherThan(required);
+        }
+        return permissions == PermissionSet.ALL_PERMISSIONS;
     }
 }
